@@ -397,6 +397,12 @@ const JournalEntry = () => {
     try {
       setSaving(true);
       
+      // Show saving toast
+      toast({
+        title: "Saving journal...",
+        description: "Please wait while we save your journal entry",
+      });
+      
       let thumbnailUrl = journal?.thumbnail_url;
       let summary = journal?.summary;
       
@@ -497,9 +503,13 @@ const JournalEntry = () => {
               <Button
                 onClick={saveJournal}
                 disabled={saving}
-                className="bg-[#2C1810] hover:bg-[#3D261C] dark:bg-[#A89985] dark:hover:bg-[#8B7355] text-white dark:text-[#1C1917] rounded-lg px-4 py-2 text-sm font-medium shadow-sm hover:shadow-md transition-all duration-200"
+                className="bg-[#2C1810] hover:bg-[#3D261C] dark:bg-[#A89985] dark:hover:bg-[#8B7355] text-white dark:text-[#1C1917] rounded-lg px-4 py-2 text-sm font-medium shadow-sm hover:shadow-md transition-all duration-200 flex items-center"
               >
-                <Save className="w-4 h-4 sm:mr-2" />
+                {saving ? (
+                  <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 sm:mr-2" />
+                )}
                 <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save'}</span>
               </Button>
             </div>
@@ -510,8 +520,8 @@ const JournalEntry = () => {
       {/* Main content */}
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8 min-h-[calc(100vh-12rem)]">
-          {/* Recording section - Shown on top for mobile */}
-          <div className="lg:col-span-1 order-1 lg:order-2">
+          {/* Recording section - Sticky on mobile */}
+          <div className="lg:col-span-1 order-1 lg:order-2 sticky top-[72px] z-40">
             <Card className="bg-white dark:bg-[#292524] border border-[#D1C4B6] dark:border-[#44403C] rounded-lg p-4 sm:p-6">
               <div className="space-y-6">
                 {showKeyInput ? (
