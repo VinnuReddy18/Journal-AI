@@ -180,14 +180,14 @@ const JournalEntry = () => {
         messages: [
           {
             role: 'system',
-            content: 'You are a skilled summarizer. Create a concise 2-3 sentence summary of the journal entry that captures the main topics, emotions, and insights discussed.'
+            content: 'You are a skilled journal analyst and summarizer. Create a thoughtful summary of the journal entry that captures the main topics, emotions, insights, and personal growth discussed. If the entry is substantial, feel free to write a longer summary (4-6 sentences) that thoroughly captures the essence of the journaling session. Include key themes, emotional patterns, and any significant realizations or decisions mentioned. write it like user is the one who is writing summary'
           },
           {
             role: 'user',
             content: userMessages
           }
         ],
-        max_tokens: 150,
+        max_tokens: 300,
         temperature: 0.7,
       }),
     });
@@ -263,6 +263,11 @@ const JournalEntry = () => {
   };
 
   const handleRecordingComplete = async (audioBlob: Blob) => {
+    // If blob is empty or too small (less than 100 bytes), don't process
+    if (!audioBlob || audioBlob.size < 100) {
+      return;
+    }
+
     if (!openaiKey) {
       toast({
         title: "API Key Required",
@@ -548,23 +553,6 @@ const JournalEntry = () => {
                 ) : (
                   <>
                     <VoiceRecorder onRecordingComplete={handleRecordingComplete} disabled={isProcessing} />
-                    <div className="border-t border-[#D1C4B6] dark:border-[#44403C] pt-4">
-                      <h3 className="font-serif text-lg text-[#2C1810] dark:text-[#E5E5E5] mb-2">Journal Stats</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-[#EAE5E0] dark:bg-[#1C1917] rounded-lg p-3">
-                          <p className="text-[#5C4033] dark:text-[#9CA3AF] text-sm mb-1">Entries</p>
-                          <p className="text-2xl font-serif text-[#2C1810] dark:text-[#E5E5E5]">
-                            {messages.filter(m => m.role === 'user').length}
-                          </p>
-                        </div>
-                        <div className="bg-[#EAE5E0] dark:bg-[#1C1917] rounded-lg p-3">
-                          <p className="text-[#5C4033] dark:text-[#9CA3AF] text-sm mb-1">AI Responses</p>
-                          <p className="text-2xl font-serif text-[#2C1810] dark:text-[#E5E5E5]">
-                            {messages.filter(m => m.role === 'assistant').length}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
                   </>
                 )}
               </div>
@@ -625,6 +613,21 @@ const JournalEntry = () => {
                       </div>
               </div>
             )}
+                {messages.length > 0 && journal?.summary && (
+                  <div className="mt-8 border-t border-[#D1C4B6] dark:border-[#44403C] pt-6">
+                    <div className="bg-[#EAE5E0] dark:bg-[#1C1917] rounded-lg p-4 sm:p-6">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Sparkles className="w-5 h-5 text-[#8B7355] dark:text-[#A89985]" />
+                        <h3 className="font-serif text-lg text-[#2C1810] dark:text-[#E5E5E5]">
+                          Journal Summary
+                        </h3>
+                      </div>
+                      <p className="text-sm text-[#5C4033] dark:text-[#9CA3AF] whitespace-pre-wrap">
+                        {journal.summary}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 </div>
               )}
               </div>
