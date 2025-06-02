@@ -40,28 +40,45 @@ const VoiceRecorder = ({ onRecordingComplete, disabled }: VoiceRecorderProps) =>
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('Requesting microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        } 
+      });
+      console.log('Microphone access granted');
+      
       streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
       
       mediaRecorder.ondataavailable = (event) => {
+        console.log('Received audio data chunk:', { size: event.data.size });
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
         }
       };
 
       mediaRecorder.onstop = () => {
+        console.log('MediaRecorder stopped');
         // Only create and send blob if we have chunks and it wasn't cancelled
         if (isRecording && chunksRef.current.length > 0) {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: 'audio/webm;codecs=opus' });
+          console.log('Created audio blob:', { size: blob.size, type: blob.type });
           onRecordingComplete(blob);
         }
         cleanup();
       };
 
-      mediaRecorder.start();
+      // Request data every second to ensure we're getting audio
+      mediaRecorder.start(1000);
+      console.log('Started recording');
       setIsRecording(true);
       setRecordingTime(0);
       
@@ -76,12 +93,14 @@ const VoiceRecorder = ({ onRecordingComplete, disabled }: VoiceRecorderProps) =>
   };
 
   const stopRecording = () => {
+    console.log('Stopping recording...');
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
   };
 
   const cancelRecording = () => {
+    console.log('Cancelling recording...');
     setIsRecording(false); // Set this first to prevent the onstop handler from processing
     cleanup();
   };
@@ -101,7 +120,7 @@ const VoiceRecorder = ({ onRecordingComplete, disabled }: VoiceRecorderProps) =>
           disabled={disabled}
           className={`w-20 h-20 rounded-full p-0 transition-all duration-300 ${
             isRecording 
-              ? 'bg-[#2C1810] hover:bg-[#3D261C] dark:bg-[#A89985] dark:hover:bg-[#8B7355]' 
+              ? 'bg-[#2C1810] hover:bg-[#3D261C] dark:bg-[#A89985] dark:hover:bg-[#8B7355] animate-pulse' 
               : 'bg-[#2C1810] hover:bg-[#3D261C] dark:bg-[#A89985] dark:hover:bg-[#8B7355]'
           }`}
         >
@@ -136,6 +155,11 @@ const VoiceRecorder = ({ onRecordingComplete, disabled }: VoiceRecorderProps) =>
         {!isRecording && !disabled && (
           <p className="text-[#5C4033] dark:text-[#9CA3AF] text-sm">
             Click to start recording
+          </p>
+        )}
+        {disabled && (
+          <p className="text-[#5C4033] dark:text-[#9CA3AF] text-sm">
+            Processing previous recording...
           </p>
         )}
       </div>

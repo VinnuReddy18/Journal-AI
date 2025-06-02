@@ -51,6 +51,7 @@ const JournalEntry = () => {
     const storedKey = localStorage.getItem('openai_api_key');
     if (storedKey) {
       setOpenaiKey(storedKey);
+      setShowKeyInput(false);
     } else {
       setShowKeyInput(true);
     }
@@ -111,56 +112,87 @@ const JournalEntry = () => {
   };
 
   const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.webm');
-    formData.append('model', 'whisper-1');
-
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to transcribe audio');
+    console.log('Starting transcription...', { blobSize: audioBlob.size });
+    
+    // Convert webm to mp3 if needed
+    let processedBlob = audioBlob;
+    if (audioBlob.type === 'audio/webm') {
+      console.log('Audio is in webm format, using as is');
     }
 
-    const result = await response.json();
-    return result.text;
+    const formData = new FormData();
+    formData.append('file', processedBlob, 'audio.webm');
+    formData.append('model', 'whisper-1');
+    
+    console.log('Sending request to OpenAI Whisper API...');
+    try {
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: formData,
+      });
+
+      console.log('Received response:', { status: response.status });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Transcription error:', errorData);
+        throw new Error(
+          errorData.error?.message || 
+          `Transcription failed (${response.status}): ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      console.log('Transcription successful:', { textLength: result.text?.length });
+      return result.text;
+    } catch (error) {
+      console.error('Transcription error:', error);
+      throw error;
+    }
   };
 
   const generateAIResponse = async (transcript: string): Promise<string> => {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a compassionate AI companion for voice journaling. Respond thoughtfully to the user\'s thoughts and feelings. Ask follow-up questions to help them explore their emotions deeper. Keep responses conversational and supportive, around 2-3 sentences.'
-          },
-          {
-            role: 'user',
-            content: transcript
-          }
-        ],
-        max_tokens: 200,
-        temperature: 0.7,
-      }),
-    });
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a compassionate AI companion for voice journaling. Respond thoughtfully to the user\'s thoughts and feelings. Ask follow-up questions to help them explore their emotions deeper. Keep responses conversational and supportive, around 2-3 sentences.'
+            },
+            {
+              role: 'user',
+              content: transcript
+            }
+          ],
+          max_tokens: 200,
+          temperature: 0.7,
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error('Failed to generate AI response');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error?.message || 
+          `OpenAI API error (${response.status}): ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      return result.choices[0].message.content;
+    } catch (error: any) {
+      console.error('OpenAI API error:', error);
+      throw new Error(error.message || 'Failed to generate AI response');
     }
-
-    const result = await response.json();
-    return result.choices[0].message.content;
   };
 
   const generateSummary = async (messages: JournalMessage[]): Promise<string> => {
@@ -263,8 +295,19 @@ const JournalEntry = () => {
   };
 
   const handleRecordingComplete = async (audioBlob: Blob) => {
+    console.log('Recording completed', { 
+      blobSize: audioBlob.size,
+      blobType: audioBlob.type,
+      hasOpenAIKey: !!openaiKey
+    });
+
     // If blob is empty or too small (less than 100 bytes), don't process
     if (!audioBlob || audioBlob.size < 100) {
+      toast({
+        title: "Recording Error",
+        description: "Recording is too short or empty",
+        variant: "destructive"
+      });
       return;
     }
 
@@ -282,13 +325,25 @@ const JournalEntry = () => {
       setIsProcessing(true);
       setSaving(true);
       
+      // Show processing toast
+      toast({
+        title: "Processing Recording",
+        description: "Transcribing your voice note...",
+      });
+      
       // Upload audio file
+      console.log('Uploading audio to Supabase...');
       const fileName = `${user?.id}/${id}/${Date.now()}.webm`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('journal-assets')
         .upload(fileName, audioBlob);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Supabase upload error:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('Audio uploaded successfully');
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -296,9 +351,22 @@ const JournalEntry = () => {
         .getPublicUrl(fileName);
 
       // Transcribe audio
-      const transcript = await transcribeAudio(audioBlob);
+      let transcript;
+      try {
+        transcript = await transcribeAudio(audioBlob);
+        console.log('Transcription completed:', { transcriptLength: transcript?.length });
+      } catch (error: any) {
+        console.error('Transcription error:', error);
+        toast({
+          title: "Transcription Failed",
+          description: error.message || "Failed to transcribe audio. Please check your OpenAI API key.",
+          variant: "destructive"
+        });
+        throw error;
+      }
 
       // Save user message to database
+      console.log('Saving message to database...');
       const { data: messageData, error: messageError } = await supabase
         .from('journal_messages')
         .insert({
@@ -311,7 +379,10 @@ const JournalEntry = () => {
         .select()
         .single();
 
-      if (messageError) throw messageError;
+      if (messageError) {
+        console.error('Supabase message save error:', messageError);
+        throw messageError;
+      }
 
       // Add to local state with proper typing
       const typedMessage: JournalMessage = {
@@ -321,8 +392,26 @@ const JournalEntry = () => {
       setMessages(prev => [...prev, typedMessage]);
 
       // Generate AI response
-      const aiResponse = await generateAIResponse(transcript);
+      toast({
+        title: "Generating Response",
+        description: "AI is thinking about your entry...",
+      });
+
+      let aiResponse;
+      try {
+        aiResponse = await generateAIResponse(transcript);
+        console.log('AI response generated:', { responseLength: aiResponse?.length });
+      } catch (error: any) {
+        console.error('AI response error:', error);
+        toast({
+          title: "AI Response Failed",
+          description: error.message || "Failed to generate AI response. Please check your OpenAI API key.",
+          variant: "destructive"
+        });
+        throw error;
+      }
       
+      console.log('Saving AI response to database...');
       const { data: aiMessageData, error: aiMessageError } = await supabase
         .from('journal_messages')
         .insert({
@@ -333,17 +422,20 @@ const JournalEntry = () => {
         .select()
         .single();
 
-      if (!aiMessageError) {
-        const typedAiMessage: JournalMessage = {
-          ...aiMessageData,
-          role: 'assistant'
-        };
-        setMessages(prev => [...prev, typedAiMessage]);
+      if (aiMessageError) {
+        console.error('Supabase AI message save error:', aiMessageError);
+        throw aiMessageError;
       }
 
+      const typedAiMessage: JournalMessage = {
+        ...aiMessageData,
+        role: 'assistant'
+      };
+      setMessages(prev => [...prev, typedAiMessage]);
+
       toast({
-        title: "Recording saved!",
-        description: "Your voice note has been transcribed and AI has responded"
+        title: "Success!",
+        description: "Your voice note has been transcribed and AI has responded",
       });
 
     } catch (error: any) {
